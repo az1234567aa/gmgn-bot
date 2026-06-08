@@ -29,7 +29,131 @@ if TYPE_CHECKING:
     from trader import BuyResult, Trader
 
 logger = logging.getLogger("gmgn-bot.risk")
+
+DATABASE_URL   = os.getenv("DATABASE_URL", "")
 POSITIONS_FILE = "gmgn_positions.json"
+
+
+def _pos_to_dict(p: "Position") -> dict:
+    return {
+        "position_id": p.position_id, "mint": p.mint,
+        "symbol": p.symbol, "source": p.source,
+        "entry_price_usd": p.entry_price_usd,
+        "entry_time": p.entry_time.isoformat(),
+        "initial_tokens": p.initial_tokens,
+        "remaining_tokens": p.remaining_tokens,
+        "initial_sol": p.initial_sol, "reason": p.reason,
+        "decimals": p.decimals, "peak_multiplier": p.peak_multiplier,
+        "trailing_active": p.trailing_active,
+        "trailing_peak": p.trailing_peak,
+        "tp1_hit": p.tp1_hit, "tp2_hit": p.tp2_hit, "tp3_hit": p.tp3_hit,
+        "total_sol_out": p.total_sol_out,
+        "exits": [{k: str(v) if isinstance(v, datetime) else v
+                   for k, v in e.items()} for e in p.exits],
+    }
+
+
+def _dict_to_pos(d: dict) -> "Position":
+    return Position(
+        position_id=d["position_id"], mint=d["mint"],
+        symbol=d["symbol"], source=d.get("source", "GMGN"),
+        entry_price_usd=d["entry_price_usd"],
+        entry_time=datetime.fromisoformat(d["entry_time"]),
+        initial_tokens=d["initial_tokens"],
+        remaining_tokens=d["remaining_tokens"],
+        initial_sol=d["initial_sol"], reason=d["reason"],
+        decimals=d.get("decimals", 6),
+        peak_multiplier=d.get("peak_multiplier", 1.0),
+        trailing_active=d.get("trailing_active", False),
+        trailing_peak=d.get("trailing_peak", 1.0),
+        tp1_hit=d.get("tp1_hit", False),
+        tp2_hit=d.get("tp2_hit", False),
+        tp3_hit=d.get("tp3_hit", False),
+        total_sol_out=d.get("total_sol_out", 0.0),
+    )
+
+
+def _file_save(positions: dict) -> None:
+    try:
+        data = {pid: _pos_to_dict(p) for pid, p in positions.items() if not p.closed}
+        with open(POSITIONS_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception as exc:
+        logger.warning("File save failed: %s", exc)
+
+
+def _file_load() -> dict:
+    if not os.path.exists(POSITIONS_FILE):
+        return {}
+    try:
+        with open(POSITIONS_FILE) as f:
+            data = json.load(f)
+        positions = {pid: _dict_to_pos(d) for pid, d in data.items()}
+        logger.info("Loaded %d position(s) from file", len(positions))
+        return positions
+    except Exception as exc:
+        logger.warning("File load failed: %s", exc)
+        return {}
+
+
+class PositionStore:
+    def __init__(self) -> None:
+        self._pool = None
+
+    async def initialize(self) -> None:
+        if not DATABASE_URL:
+            logger.warning("DATABASE_URL not set — using file fallback")
+            return
+        try:
+            import asyncpg
+            self._pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=3)
+            async with self._pool.acquire() as conn:
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS gmgn_positions (
+                        position_id TEXT PRIMARY KEY,
+                        data        JSONB    NOT NULL,
+                        closed      BOOLEAN  NOT NULL DEFAULT FALSE,
+                        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
+            logger.info("PostgreSQL position store ready (GMGN bot)")
+        except Exception as exc:
+            logger.error("PostgreSQL init failed, using file fallback: %s", exc)
+            self._pool = None
+
+    async def save(self, position: "Position") -> None:
+        if self._pool is None:
+            return
+        try:
+            data = json.dumps(_pos_to_dict(position))
+            async with self._pool.acquire() as conn:
+                await conn.execute("""
+                    INSERT INTO gmgn_positions (position_id, data, closed, updated_at)
+                    VALUES ($1, $2::jsonb, $3, NOW())
+                    ON CONFLICT (position_id)
+                    DO UPDATE SET data=EXCLUDED.data, closed=EXCLUDED.closed, updated_at=NOW()
+                """, position.position_id, data, position.closed)
+        except Exception as exc:
+            logger.warning("DB save failed: %s", exc)
+
+    async def load_all(self) -> dict:
+        if self._pool is None:
+            return _file_load()
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT data FROM gmgn_positions WHERE closed = FALSE"
+                )
+            positions = {}
+            for row in rows:
+                d = json.loads(row["data"])
+                p = _dict_to_pos(d)
+                positions[p.position_id] = p
+            logger.info("Loaded %d open position(s) from PostgreSQL (GMGN)", len(positions))
+            return positions
+        except Exception as exc:
+            logger.warning("DB load failed, trying file: %s", exc)
+            return _file_load()
 
 
 @dataclass
@@ -57,74 +181,23 @@ class Position:
     price_miss_count: int = 0
 
 
-def _save(positions: dict[str, Position]) -> None:
-    try:
-        data = {}
-        for pid, p in positions.items():
-            if p.closed:
-                continue
-            data[pid] = {
-                "position_id": p.position_id, "mint": p.mint,
-                "symbol": p.symbol, "source": p.source,
-                "entry_price_usd": p.entry_price_usd,
-                "entry_time": p.entry_time.isoformat(),
-                "initial_tokens": p.initial_tokens,
-                "remaining_tokens": p.remaining_tokens,
-                "initial_sol": p.initial_sol,
-                "reason": p.reason, "decimals": p.decimals,
-                "peak_multiplier": p.peak_multiplier,
-                "trailing_active": p.trailing_active,
-                "trailing_peak": p.trailing_peak,
-                "tp1_hit": p.tp1_hit, "tp2_hit": p.tp2_hit, "tp3_hit": p.tp3_hit,
-                "total_sol_out": p.total_sol_out,
-                "exits": [{k: str(v) if isinstance(v, datetime) else v
-                           for k, v in e.items()} for e in p.exits],
-            }
-        with open(POSITIONS_FILE, "w") as f:
-            json.dump(data, f)
-    except Exception as exc:
-        logger.warning("Save positions failed: %s", exc)
-
-
-def _load() -> dict[str, Position]:
-    if not os.path.exists(POSITIONS_FILE):
-        return {}
-    try:
-        with open(POSITIONS_FILE) as f:
-            data = json.load(f)
-        positions = {}
-        for pid, d in data.items():
-            positions[pid] = Position(
-                position_id=d["position_id"], mint=d["mint"],
-                symbol=d["symbol"], source=d.get("source", "GMGN"),
-                entry_price_usd=d["entry_price_usd"],
-                entry_time=datetime.fromisoformat(d["entry_time"]),
-                initial_tokens=d["initial_tokens"],
-                remaining_tokens=d["remaining_tokens"],
-                initial_sol=d["initial_sol"],
-                reason=d["reason"],
-                decimals=d.get("decimals", 6),
-                peak_multiplier=d.get("peak_multiplier", 1.0),
-                trailing_active=d.get("trailing_active", False),
-                trailing_peak=d.get("trailing_peak", 1.0),
-                tp1_hit=d.get("tp1_hit", False),
-                tp2_hit=d.get("tp2_hit", False),
-                tp3_hit=d.get("tp3_hit", False),
-                total_sol_out=d.get("total_sol_out", 0.0),
-            )
-        logger.info("Loaded %d open position(s) from disk", len(positions))
-        return positions
-    except Exception as exc:
-        logger.warning("Load positions failed: %s", exc)
-        return {}
-
-
 class RiskManager:
     def __init__(self, trader: "Trader", alerter: "Alerter") -> None:
-        self.trader = trader
-        self.alerter = alerter
-        self.positions: dict[str, Position] = _load()
+        self.trader   = trader
+        self.alerter  = alerter
+        self.store    = PositionStore()
+        self.positions: dict[str, Position] = {}
         self._running = False
+
+    async def initialize(self) -> None:
+        await self.store.initialize()
+        self.positions = await self.store.load_all()
+
+    async def _persist(self, p: Position) -> None:
+        if self.store._pool is not None:
+            await self.store.save(p)
+        else:
+            _file_save(self.positions)
 
     async def open_position(self, buy: "BuyResult") -> None:
         if not buy.success or buy.tokens_received <= 0:
@@ -137,7 +210,7 @@ class RiskManager:
             initial_sol=buy.amount_sol, reason=buy.reason,
         )
         self.positions[buy.position_id] = p
-        _save(self.positions)
+        await self._persist(p)
         logger.info("Position opened — %s [%s] %.4f tokens @ $%.8f",
                     buy.symbol, buy.source, buy.tokens_received, buy.entry_price_usd)
 
@@ -154,7 +227,7 @@ class RiskManager:
             p.total_sol_out += result.sol_received
             p.exits.append({"reason": reason, "tokens": tokens,
                              "sol": result.sol_received, "time": datetime.now(timezone.utc)})
-            _save(self.positions)
+            await self._persist(p)
             logger.info("Partial sell — %s | %s | %.2f%% | %.4f SOL",
                         p.symbol, reason, pct, result.sol_received)
             return result.sol_received
@@ -166,10 +239,10 @@ class RiskManager:
         if p.remaining_tokens > 0:
             await self._sell_partial(p, 100.0, reason)
         p.closed = True
-        _save(self.positions)
+        await self._persist(p)
 
         exit_time = datetime.now(timezone.utc)
-        pnl_sol = p.total_sol_out - p.initial_sol
+        pnl_sol   = p.total_sol_out - p.initial_sol
         sol_price = await self.trader.get_sol_price()
         await self.alerter.send_trade_alert(TradeAlert(
             token_mint=p.mint, token_symbol=p.symbol,
@@ -190,7 +263,7 @@ class RiskManager:
         if not price or price <= 0:
             p.price_miss_count += 1
             if p.price_miss_count >= 10:
-                logger.warning("Force-selling %s — price unavailable for %d checks",
+                logger.warning("Force-selling %s — no price data for %d checks",
                                p.symbol, p.price_miss_count)
                 await self._close(p, "no_price_data", p.entry_price_usd)
             return
@@ -198,7 +271,7 @@ class RiskManager:
 
         mult = price / p.entry_price_usd if p.entry_price_usd > 0 else 1.0
         p.peak_multiplier = max(p.peak_multiplier, mult)
-        pnl_pct = (mult - 1.0) * 100.0
+        pnl_pct  = (mult - 1.0) * 100.0
         hold_min = (datetime.now(timezone.utc) - p.entry_time).total_seconds() / 60.0
 
         if pnl_pct <= STOP_LOSS_PCT:

@@ -61,6 +61,7 @@ async def main() -> None:
         alerter      = Alerter(session)
         trader       = Trader(session)
         risk_manager = RiskManager(trader, alerter)
+        await risk_manager.initialize()   # connects to PostgreSQL, loads open positions
         gmgn_client  = GMGNClient(session, trader, risk_manager, alerter)
         wallet_copier = WalletCopier(session, trader, risk_manager, alerter, gmgn_client)
 

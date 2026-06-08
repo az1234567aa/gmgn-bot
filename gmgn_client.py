@@ -157,6 +157,12 @@ class GMGNClient:
             logger.info("Skip %s — RugCheck flagged", symbol)
             return
 
+        # Must be priceable by Jupiter before we buy — no price = can't monitor = skip
+        price = await self.trader.get_token_price(mint)
+        if not price or price <= 0:
+            logger.info("Skip %s — Jupiter has no price, token not tradeable yet", symbol)
+            return
+
         await self.alerter.send_buy_signal(symbol, mint, amount_sol, source, reason)
         result = await self.trader.buy(
             mint=mint, amount_sol=amount_sol, source=source,

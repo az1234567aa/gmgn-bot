@@ -54,17 +54,17 @@ WALLET_POLL_INTERVAL_SECONDS = 8
 RISK_POLL_INTERVAL_SECONDS   = 5
 
 # ── Risk / TP / SL ────────────────────────────────────────────────────────────
-STOP_LOSS_PCT                 = -25.0
+STOP_LOSS_PCT                 = -20.0
 TRAILING_ACTIVATION_MULTIPLIER = 3.0
-TRAILING_STOP_PCT             = -18.0
+TRAILING_STOP_PCT             = -15.0
 TP1_MULTIPLIER                = 2.0
-TP1_SELL_PCT                  = 34.0
+TP1_SELL_PCT                  = 25.0
 TP2_MULTIPLIER                = 5.0
-TP2_SELL_PCT                  = 33.0
-TP3_MULTIPLIER                = 10.0
-TP3_SELL_PCT                  = 33.0
-TIME_STOP_MINUTES             = 45
-TIME_STOP_MIN_MULTIPLIER      = 1.5
+TP2_SELL_PCT                  = 25.0
+TP3_MULTIPLIER                = 20.0
+TP3_SELL_PCT                  = 25.0
+TIME_STOP_MINUTES             = 30
+TIME_STOP_MIN_MULTIPLIER      = 1.3
 DEFAULT_SLIPPAGE_BPS          = 300
 MAX_RETRIES                   = 3
 RETRY_DELAY_SECONDS           = 1.5

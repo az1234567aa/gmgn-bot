@@ -50,7 +50,7 @@ async def main() -> None:
     mode = "PAPER TRADE" if PAPER_TRADE else "LIVE TRADE"
     logger.info("=" * 55)
     logger.info("  Birdeye Bot starting — %s", mode)
-    logger.info("  Sources: Birdeye trending + new listings + wallet copy")
+    logger.info("  Sources: Birdeye trending + new listings")
     logger.info("=" * 55)
 
     connector = aiohttp.TCPConnector(
@@ -68,7 +68,7 @@ async def main() -> None:
         await alerter.send_message(
             f"🦅 <b>Birdeye Bot started — {mode}</b>\n"
             f"Wallet: <code>{trader.public_key[:20]}...</code>\n"
-            f"Scanning: Birdeye trending · new listings · top wallet copy"
+            f"Scanning: Birdeye trending · new listings (wallet copy on Solana bot)"
         )
 
         logger.info("Starting all modules...")

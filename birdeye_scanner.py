@@ -247,39 +247,9 @@ class BirdeyeScanner:
             await asyncio.sleep(0.5)
 
     async def _scan_wallet_copy(self) -> None:
-        """Copy recent buys from Birdeye's top performing wallets."""
-        for wallet in self._top_wallets:
-            try:
-                url = HELIUS_TX_URL.format(address=wallet)
-                txs = await fetch_json(
-                    self.session, "GET", url,
-                    params={"limit": "5", "type": "SWAP"},
-                    label=f"wallet copy {wallet[:8]}",
-                )
-                if not isinstance(txs, list):
-                    continue
-
-                for tx in txs:
-                    sig = tx.get("signature", "")
-                    if not sig or sig in self._seen_txs:
-                        continue
-                    self._seen_txs.add(sig)
-
-                    transfers = tx.get("tokenTransfers", []) or []
-                    for t in transfers:
-                        mint = t.get("mint", "")
-                        if (mint and mint != SOL_MINT
-                                and t.get("toUserAccount") == wallet
-                                and float(t.get("tokenAmount", 0) or 0) > 0):
-                            symbol = tx.get("description", "").split(" ")[-1] or "UNKNOWN"
-                            reason = f"Birdeye top wallet {wallet[:8]} bought"
-                            await self._buy(mint, symbol, COPY_BUY_SOL,
-                                            "Birdeye wallet copy", reason)
-                            break
-
-            except Exception as exc:
-                logger.warning("Wallet copy error %s: %s", wallet[:8], exc)
-            await asyncio.sleep(1.0)
+        # Wallet copy disabled — Solana bot handles this via its own Helius key
+        # Avoids 401/rate limit conflicts from sharing the same key
+        pass
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 

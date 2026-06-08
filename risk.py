@@ -54,6 +54,7 @@ class Position:
     closed: bool = False
     total_sol_out: float = 0.0
     exits: list[dict[str, Any]] = field(default_factory=list)
+    price_miss_count: int = 0
 
 
 def _save(positions: dict[str, Position]) -> None:
@@ -187,7 +188,13 @@ class RiskManager:
             return
         price = await self.trader.get_token_price(p.mint)
         if not price or price <= 0:
+            p.price_miss_count += 1
+            if p.price_miss_count >= 10:
+                logger.warning("Force-selling %s — price unavailable for %d checks",
+                               p.symbol, p.price_miss_count)
+                await self._close(p, "no_price_data", p.entry_price_usd)
             return
+        p.price_miss_count = 0
 
         mult = price / p.entry_price_usd if p.entry_price_usd > 0 else 1.0
         p.peak_multiplier = max(p.peak_multiplier, mult)

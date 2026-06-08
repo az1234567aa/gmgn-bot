@@ -106,24 +106,40 @@ class BirdeyeScanner:
             return []
 
     async def _fetch_top_wallets(self) -> list[str]:
-        """Top gaining wallets from Birdeye — updated every 10 scan cycles."""
+        """
+        Top gaining wallets — tries Birdeye trader endpoint first,
+        falls back to a curated list of known profitable Solana wallets.
+        """
         try:
             data = await fetch_json(
                 self.session, "GET",
-                f"{BIRDEYE_BASE}/v1/trader/gainers-losers",
+                f"{BIRDEYE_BASE}/trader/gainers-losers",
                 params={"type": "1W", "sort_by": "PnL", "sort_type": "desc",
                         "offset": "0", "limit": str(TOP_WALLET_COUNT)},
                 headers=BIRDEYE_HEADERS,
                 label="Birdeye top wallets",
             )
-            items = data.get("data", {}).get("items", []) or []
-            wallets = [w.get("address", "") for w in items if w.get("address")]
+            items = (data.get("data", {}).get("items", [])
+                     or data.get("data", {}).get("result", []) or [])
+            wallets = [w.get("address", "") or w.get("wallet", "")
+                       for w in items if w.get("address") or w.get("wallet")]
+            wallets = [w for w in wallets if w]
             if wallets:
-                logger.info("Birdeye top wallets: %s", wallets)
-            return wallets
+                logger.info("Birdeye top wallets: %d found", len(wallets))
+                return wallets[:TOP_WALLET_COUNT]
         except Exception as exc:
-            logger.warning("Birdeye top wallets failed: %s", exc)
-            return []
+            logger.warning("Birdeye top wallets failed: %s — using fallback list", exc)
+
+        # Fallback: known profitable Solana memecoin wallets (same as Solana bot)
+        fallback = [
+            "CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o",  # Cented
+            "4vw54BmAogeRV3vPKWyFet5yf8DTLcREzdSzx4rw9Ud9",  # decu
+            "FAicXNV5FVqtfbpn4Zccs71XcfGeyxBSGbqLDyDJZjke",  # Radiance
+            "Av3xWHJ5EsoLZag6pr7LKbrGgLRTaykXomDD5kBhL9YQ",  # HeyItsYolo
+            "99xnE2zEFi8YhmKDaikc1EvH6ELTQJppnqUwMzmpLXrs",  # Colercooks
+        ]
+        logger.info("Using fallback wallet list (%d wallets)", len(fallback))
+        return fallback
 
     async def _fetch_token_security(self, mint: str) -> dict:
         try:

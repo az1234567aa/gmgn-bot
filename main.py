@@ -68,12 +68,13 @@ async def main() -> None:
         await alerter.send_message(
             f"🚀 <b>GMGN Bot started — {mode}</b>\n"
             f"Wallet: <code>{trader.public_key[:20]}...</code>\n"
-            f"Scanning: trending · smart money · new tokens · wallet copy"
+            f"Note: GMGN API blocked on server IPs — wallet copy trading active via Helius"
         )
 
         logger.info("Starting all modules...")
+        # gmgn_client disabled — GMGN blocks Railway datacenter IPs (403)
+        # wallet_copier still runs — copies top on-chain wallets via Helius
         await asyncio.gather(
-            gmgn_client.run(),
             wallet_copier.run(),
             risk_manager.run(),
         )

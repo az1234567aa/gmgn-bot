@@ -8,6 +8,7 @@ load_dotenv()
 # ── Wallet / Keys ────────────────────────────────────────────────────────────
 WALLET_PRIVATE_KEY: str = os.getenv("WALLET_PRIVATE_KEY", "")
 HELIUS_API_KEY: str     = os.getenv("HELIUS_API_KEY", "")
+BIRDEYE_API_KEY: str    = os.getenv("BIRDEYE_API_KEY", "")
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID: str   = os.getenv("TELEGRAM_CHAT_ID", "")
 PAPER_TRADE: bool       = os.getenv("PAPER_TRADE", "true").lower() in ("true", "1", "yes")

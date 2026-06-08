@@ -31,7 +31,7 @@ _GMGN_HEADERS = {
                   "Chrome/124.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Encoding": "gzip, deflate",
     "Referer": "https://gmgn.ai/",
     "Origin": "https://gmgn.ai",
     "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124"',
